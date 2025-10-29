@@ -1,20 +1,37 @@
-from fastapi import FastAPI
+import os
+import logging
+from fastapi import FastAPI, Body
 from fastapi.middleware.cors import CORSMiddleware
-from routes import roles, usuarios, municiones, prueba
 from fastapi.responses import StreamingResponse, JSONResponse
+from routes import roles, usuarios, municiones, prueba
 from conf_camara import camera, network
-from fastapi import Body
 
+# Configuración de Render y YOLO
+os.environ["YOLO_CONFIG_DIR"] = "/tmp/Ultralytics"
+PORT = int(os.environ.get("PORT", 8000))
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Inicializar modelo YOLO
+try:
+    from ultralytics import YOLO
+    camera.model = YOLO("yolov8n.pt")
+    logger.info("Modelo YOLO cargado correctamente")
+except Exception as e:
+    logger.error(f"No se pudo cargar el modelo YOLO: {e}")
+
+# FastAPI
 app = FastAPI()
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"],  # o localhost:3000 si es frontend local
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Endpoints (igual que tu main.py)
 @app.post("/detecciones_area")
 @app.get("/detecciones_area")
 def get_detecciones_area(x1: int, y1: int, x2: int, y2: int, impactos_data: dict = Body(None)):
@@ -59,40 +76,29 @@ def reanudar_deteccion():
 @app.get("/detecciones")
 def get_detecciones():
     return {
-        "hoja": camera.last_best_box.xyxy[0].tolist() if camera.last_best_box is not None else None,
-        "impactos": [
-            {"bbox": bbox, "centro": centro}
-            for bbox, centro in camera.last_impactos
-        ],
+        "hoja": camera.last_best_box.xyxy[0].tolist() if camera.last_best_box else None,
+        "impactos": [{"bbox": bbox, "centro": centro} for bbox, centro in camera.last_impactos],
         "celda": camera.last_celda_coords,
         "medidas": camera.last_medidas_texto,
     }
 
 @app.get("/obtener_celda_actual")
 async def obtener_celda_actual():
-    hoja_coords = None
-    if camera.last_best_box is not None:
-        hx1, hy1, hx2, hy2 = map(int, camera.last_best_box.xyxy[0])
-        hoja_coords = [hx1, hy1, hx2, hy2]
+    hoja_coords = list(map(int, camera.last_best_box.xyxy[0])) if camera.last_best_box else None
     celda_coords = list(camera.last_celda_coords) if camera.last_celda_coords else None
     medidas = camera.last_medidas_texto if camera.last_medidas_texto else ""
-    if hoja_coords is not None:
-        return {
-            "hoja": hoja_coords,
-            "celda": celda_coords,
-            "medidas": medidas,
-            "success": True
-        }
-    else:
-        return {
-            "hoja": None,
-            "celda": celda_coords,
-            "medidas": medidas,
-            "success": False,
-            "message": "No hay hoja detectada actualmente"
-        }
+    if hoja_coords:
+        return {"hoja": hoja_coords, "celda": celda_coords, "medidas": medidas, "success": True}
+    return {"hoja": None, "celda": celda_coords, "medidas": medidas, "success": False, "message": "No hay hoja detectada actualmente"}
 
+# Routers
 app.include_router(roles.router)
 app.include_router(usuarios.router, prefix="/usuarios")
 app.include_router(municiones.router)
 app.include_router(prueba.router)
+
+# Run
+if __name__ == "__main__":
+    import uvicorn
+    logger.info(f"Iniciando servidor en puerto {PORT}")
+    uvicorn.run("main:app", host="0.0.0.0", port=PORT)
