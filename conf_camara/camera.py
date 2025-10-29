@@ -12,7 +12,7 @@ stop_streaming = False
 pause_detection = False
 current_frame = None
 frame_lock = threading.Lock()
-model = YOLO("D:/PruebaPrecision/backend/modelo/train100/best.pt")
+model = YOLO("modelo/train100/best.pt")
 
 HOJA_ANCHO_CM = 21.59
 HOJA_ALTO_CM = 27.94
