@@ -1,4 +1,3 @@
-# usuarios.py
 from fastapi import APIRouter, UploadFile, Form, Body
 from fastapi.responses import JSONResponse
 from database.connection import get_connection
@@ -11,12 +10,6 @@ import logging
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 logger = logging.getLogger(__name__)
-
-def needs_rehash(stored_hash: str) -> bool:
-    try:
-        return pwd_context.identify(stored_hash) is None
-    except Exception:
-        return True
 
 @router.post("/login")
 async def login(data: dict = Body(...)):
@@ -49,14 +42,15 @@ async def login(data: dict = Body(...)):
 
         stored_hash = user[1]
 
-        # Rehash si la contraseña estaba en esquema antiguo
-        if needs_rehash(stored_hash):
-            new_hash = pwd_context.hash(stored_hash)
+        # Verificar contraseña
+        valid = pwd_context.verify(contrasena, stored_hash)
+
+        # Rehash si es necesario
+        if valid and pwd_context.needs_update(stored_hash):
+            new_hash = pwd_context.hash(contrasena)
             cur.execute("UPDATE usuario SET contrasena=%s WHERE id=%s", (new_hash, user[0]))
             conn.commit()
             stored_hash = new_hash
-
-        valid = pwd_context.verify(contrasena, stored_hash)
 
         cur.close()
         conn.close()
