@@ -6,14 +6,12 @@ from fastapi.responses import StreamingResponse, JSONResponse
 from routes import roles, usuarios, municiones, prueba
 from conf_camara import camera, network
 
-# Configuración de Render y YOLO
-os.environ["YOLO_CONFIG_DIR"] = "/tmp/Ultralytics"
-PORT = int(os.environ.get("PORT", 8000))
-
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Inicializar modelo YOLO
+os.environ["YOLO_CONFIG_DIR"] = "/tmp/Ultralytics"
+PORT = int(os.environ.get("PORT", 8000))
+
 try:
     from ultralytics import YOLO
     camera.model = YOLO("yolov8n.pt")
@@ -21,17 +19,18 @@ try:
 except Exception as e:
     logger.error(f"No se pudo cargar el modelo YOLO: {e}")
 
-# FastAPI
-app = FastAPI()
+app = FastAPI(title="Backend Precision", version="1.0.0")
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://frontend-precision.vercel.app")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # o localhost:3000 si es frontend local
+    allow_origins=[FRONTEND_URL],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Endpoints (igual que tu main.py)
 @app.post("/detecciones_area")
 @app.get("/detecciones_area")
 def get_detecciones_area(x1: int, y1: int, x2: int, y2: int, impactos_data: dict = Body(None)):
@@ -91,13 +90,11 @@ async def obtener_celda_actual():
         return {"hoja": hoja_coords, "celda": celda_coords, "medidas": medidas, "success": True}
     return {"hoja": None, "celda": celda_coords, "medidas": medidas, "success": False, "message": "No hay hoja detectada actualmente"}
 
-# Routers
 app.include_router(roles.router)
 app.include_router(usuarios.router, prefix="/usuarios")
 app.include_router(municiones.router)
 app.include_router(prueba.router)
 
-# Run
 if __name__ == "__main__":
     import uvicorn
     logger.info(f"Iniciando servidor en puerto {PORT}")
