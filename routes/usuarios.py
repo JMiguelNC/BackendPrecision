@@ -4,17 +4,22 @@ from fastapi.responses import JSONResponse
 from passlib.context import CryptContext
 from psycopg2 import errors
 import base64
+import traceback
+import logging
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+logger = logging.getLogger(__name__)
 
-
-# --- LOGIN ---
 @router.post("/login")
 async def login(data: dict = Body(...)):
+    conn = None
     try:
         usuario = data.get("usuario")
         contrasena = data.get("contrasena")
+
+        if not usuario or not contrasena:
+            return JSONResponse({"success": False, "message": "Debe ingresar usuario y contraseña"}, status_code=400)
 
         conn = get_connection()
         cur = conn.cursor()
@@ -30,13 +35,12 @@ async def login(data: dict = Body(...)):
 
         cur.close()
         conn.close()
+        conn = None
 
         if not user:
             return JSONResponse({"success": False, "message": "Usuario no encontrado"}, status_code=400)
-
         if user[2] != "true":
             return JSONResponse({"success": False, "message": "Usuario desactivado"}, status_code=400)
-
         if not pwd_context.verify(contrasena, user[1]):
             return JSONResponse({"success": False, "message": "Contraseña incorrecta"}, status_code=400)
 
@@ -53,19 +57,20 @@ async def login(data: dict = Body(...)):
                 "ap_materno": user[7]
             }
         })
-    except Exception as e:
+    except Exception:
         if conn:
             conn.rollback()
-        return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+            conn.close()
+        logger.error("Error en /usuarios/login:\n%s", traceback.format_exc())
+        return JSONResponse({"success": False, "message": "Error interno del servidor"}, status_code=500)
 
 
-# --- LISTAR USUARIOS ---
 @router.get("/")
 def listar_usuarios():
+    conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-
         cur.execute("""
             SELECT u.id, u.nombres, u.ap_paterno, u.ap_materno, u.ci, u.fecha_nacimiento,
                    u.usuario, u.correo, u.celular, u.rango, r.nombre_rol, u.foto, u.estado
@@ -74,16 +79,15 @@ def listar_usuarios():
             ORDER BY u.id
         """)
         usuarios = cur.fetchall()
-
         cur.close()
         conn.close()
+        conn = None
 
         lista_usuarios = []
         for u in usuarios:
             foto_base64 = None
             if u[11]:
                 foto_base64 = "data:image/jpeg;base64," + base64.b64encode(u[11]).decode("utf-8")
-
             lista_usuarios.append({
                 "id": u[0],
                 "nombres": u[1],
@@ -99,15 +103,15 @@ def listar_usuarios():
                 "foto": foto_base64,
                 "estado": True if u[12] == "true" else False
             })
-
         return lista_usuarios
-    except Exception as e:
+    except Exception:
         if conn:
             conn.rollback()
-        return JSONResponse({"error": str(e)}, status_code=400)
+            conn.close()
+        logger.error("Error en listar_usuarios:\n%s", traceback.format_exc())
+        return JSONResponse({"error": "Error interno del servidor"}, status_code=500)
 
 
-# --- ACTUALIZAR USUARIO ---
 @router.put("/{id}")
 async def actualizar_usuario(
     id: int,
@@ -115,12 +119,11 @@ async def actualizar_usuario(
     correo: str = Form(...),
     foto: UploadFile = None
 ):
+    conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-
         foto_bytes = await foto.read() if foto else None
-
         if foto_bytes:
             cur.execute("""
                 UPDATE usuario
@@ -133,44 +136,41 @@ async def actualizar_usuario(
                 SET usuario=%s, correo=%s
                 WHERE id=%s
             """, (usuario, correo, id))
-
         conn.commit()
         cur.close()
         conn.close()
-
         return JSONResponse({"mensaje": "Usuario actualizado correctamente"})
     except Exception as e:
         if conn:
             conn.rollback()
-
+            conn.close()
+        logger.error("Error en actualizar_usuario:\n%s", traceback.format_exc())
         if isinstance(e, errors.UniqueViolation):
             if "usuario_usuario_key" in str(e):
                 return JSONResponse({"error": "El nombre de usuario ya existe"}, status_code=400)
             elif "usuario_correo_key" in str(e):
                 return JSONResponse({"error": "El correo ya está registrado"}, status_code=400)
+        return JSONResponse({"error": "Error interno del servidor"}, status_code=500)
 
-        return JSONResponse({"error": str(e)}, status_code=400)
 
-
-# --- ELIMINAR USUARIO ---
 @router.delete("/{id}")
 def eliminar_usuario(id: int):
+    conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-
         cur.execute("""
             UPDATE usuario
             SET estado='false'
             WHERE id=%s
         """, (id,))
-
         conn.commit()
         cur.close()
         conn.close()
-
         return JSONResponse({"mensaje": "Usuario desactivado correctamente"})
-    except Exception as e:
+    except Exception:
         if conn:
             conn.rollback()
-        return JSONResponse({"error": str(e)}, status_code=400)
+            conn.close()
+        logger.error("Error en eliminar_usuario:\n%s", traceback.format_exc())
+        return JSONResponse({"error": "Error interno del servidor"}, status_code=500)
