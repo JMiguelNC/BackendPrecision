@@ -1,6 +1,7 @@
+# usuarios.py
 from fastapi import APIRouter, UploadFile, Form, Body
-from database.connection import get_connection
 from fastapi.responses import JSONResponse
+from database.connection import get_connection
 from passlib.context import CryptContext
 from psycopg2 import errors
 import base64
@@ -17,7 +18,7 @@ def needs_rehash(stored_hash: str) -> bool:
     except Exception:
         return True
 
-@router.post("/usuarios/login")
+@router.post("/login")
 async def login(data: dict = Body(...)):
     conn = None
     try:
@@ -48,6 +49,7 @@ async def login(data: dict = Body(...)):
 
         stored_hash = user[1]
 
+        # Rehash si la contraseña estaba en esquema antiguo
         if needs_rehash(stored_hash):
             new_hash = pwd_context.hash(stored_hash)
             cur.execute("UPDATE usuario SET contrasena=%s WHERE id=%s", (new_hash, user[0]))
@@ -58,7 +60,6 @@ async def login(data: dict = Body(...)):
 
         cur.close()
         conn.close()
-        conn = None
 
         if not valid:
             return JSONResponse({"success": False, "message": "Contraseña incorrecta"}, status_code=400)
@@ -84,8 +85,7 @@ async def login(data: dict = Body(...)):
         logger.error("Error en /usuarios/login:\n%s", traceback.format_exc())
         return JSONResponse({"success": False, "message": "Error interno del servidor"}, status_code=500)
 
-
-@router.get("/usuarios/")
+@router.get("/")
 def listar_usuarios():
     conn = None
     try:
@@ -101,13 +101,10 @@ def listar_usuarios():
         usuarios = cur.fetchall()
         cur.close()
         conn.close()
-        conn = None
 
         lista_usuarios = []
         for u in usuarios:
-            foto_base64 = None
-            if u[11]:
-                foto_base64 = "data:image/jpeg;base64," + base64.b64encode(u[11]).decode("utf-8")
+            foto_base64 = "data:image/jpeg;base64," + base64.b64encode(u[11]).decode("utf-8") if u[11] else None
             lista_usuarios.append({
                 "id": u[0],
                 "nombres": u[1],
@@ -131,8 +128,7 @@ def listar_usuarios():
         logger.error("Error en listar_usuarios:\n%s", traceback.format_exc())
         return JSONResponse({"error": "Error interno del servidor"}, status_code=500)
 
-
-@router.put("/usuarios/{id}")
+@router.put("/{id}")
 async def actualizar_usuario(id: int, usuario: str = Form(...), correo: str = Form(...), foto: UploadFile = None):
     conn = None
     try:
@@ -167,18 +163,13 @@ async def actualizar_usuario(id: int, usuario: str = Form(...), correo: str = Fo
                 return JSONResponse({"error": "El correo ya está registrado"}, status_code=400)
         return JSONResponse({"error": "Error interno del servidor"}, status_code=500)
 
-
-@router.delete("/usuarios/{id}")
+@router.delete("/{id}")
 def eliminar_usuario(id: int):
     conn = None
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("""
-            UPDATE usuario
-            SET estado='false'
-            WHERE id=%s
-        """, (id,))
+        cur.execute("UPDATE usuario SET estado='false' WHERE id=%s", (id,))
         conn.commit()
         cur.close()
         conn.close()
