@@ -11,19 +11,23 @@ router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 logger = logging.getLogger(__name__)
 
-@router.post("/login")
+def needs_rehash(stored_hash: str) -> bool:
+    try:
+        return pwd_context.identify(stored_hash) is None
+    except Exception:
+        return True
+
+@router.post("/usuarios/login")
 async def login(data: dict = Body(...)):
     conn = None
     try:
         usuario = data.get("usuario")
         contrasena = data.get("contrasena")
-
         if not usuario or not contrasena:
             return JSONResponse({"success": False, "message": "Debe ingresar usuario y contraseña"}, status_code=400)
 
         conn = get_connection()
         cur = conn.cursor()
-
         cur.execute("""
             SELECT u.id, u.contrasena, u.estado, u.rol_id, u.primer_inicio,
                    u.nombres, u.ap_paterno, u.ap_materno, r.nombre_rol
@@ -33,15 +37,30 @@ async def login(data: dict = Body(...)):
         """, (usuario,))
         user = cur.fetchone()
 
+        if not user:
+            cur.close()
+            conn.close()
+            return JSONResponse({"success": False, "message": "Usuario no encontrado"}, status_code=400)
+        if user[2] != "true":
+            cur.close()
+            conn.close()
+            return JSONResponse({"success": False, "message": "Usuario desactivado"}, status_code=400)
+
+        stored_hash = user[1]
+
+        if needs_rehash(stored_hash):
+            new_hash = pwd_context.hash(stored_hash)
+            cur.execute("UPDATE usuario SET contrasena=%s WHERE id=%s", (new_hash, user[0]))
+            conn.commit()
+            stored_hash = new_hash
+
+        valid = pwd_context.verify(contrasena, stored_hash)
+
         cur.close()
         conn.close()
         conn = None
 
-        if not user:
-            return JSONResponse({"success": False, "message": "Usuario no encontrado"}, status_code=400)
-        if user[2] != "true":
-            return JSONResponse({"success": False, "message": "Usuario desactivado"}, status_code=400)
-        if not pwd_context.verify(contrasena, user[1]):
+        if not valid:
             return JSONResponse({"success": False, "message": "Contraseña incorrecta"}, status_code=400)
 
         return JSONResponse({
@@ -57,6 +76,7 @@ async def login(data: dict = Body(...)):
                 "ap_materno": user[7]
             }
         })
+
     except Exception:
         if conn:
             conn.rollback()
@@ -65,7 +85,7 @@ async def login(data: dict = Body(...)):
         return JSONResponse({"success": False, "message": "Error interno del servidor"}, status_code=500)
 
 
-@router.get("/")
+@router.get("/usuarios/")
 def listar_usuarios():
     conn = None
     try:
@@ -112,13 +132,8 @@ def listar_usuarios():
         return JSONResponse({"error": "Error interno del servidor"}, status_code=500)
 
 
-@router.put("/{id}")
-async def actualizar_usuario(
-    id: int,
-    usuario: str = Form(...),
-    correo: str = Form(...),
-    foto: UploadFile = None
-):
+@router.put("/usuarios/{id}")
+async def actualizar_usuario(id: int, usuario: str = Form(...), correo: str = Form(...), foto: UploadFile = None):
     conn = None
     try:
         conn = get_connection()
@@ -153,7 +168,7 @@ async def actualizar_usuario(
         return JSONResponse({"error": "Error interno del servidor"}, status_code=500)
 
 
-@router.delete("/{id}")
+@router.delete("/usuarios/{id}")
 def eliminar_usuario(id: int):
     conn = None
     try:
