@@ -9,8 +9,6 @@ import logging
 import bcrypt
 from passlib.hash import bcrypt as passlib_bcrypt
 
-passlib_bcrypt.set_backend("bcrypt")
-
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 logger = logging.getLogger(__name__)
