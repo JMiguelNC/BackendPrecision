@@ -1,3 +1,4 @@
+# main.py
 import os
 import logging
 from fastapi import FastAPI, Body
@@ -21,7 +22,6 @@ except Exception as e:
 
 app = FastAPI(title="Backend Precision", version="1.0.0")
 
-# --- 🔥 CONFIGURACIÓN CORS FIJA ---
 origins = [
     "https://frontend-precision.vercel.app",
     "http://localhost:3000",
@@ -35,7 +35,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-# --- 🔥 FIN CONFIGURACIÓN CORS ---
 
 @app.post("/detecciones_area")
 @app.get("/detecciones_area")
@@ -50,9 +49,7 @@ def get_detecciones_area(x1: int, y1: int, x2: int, y2: int, impactos_data: dict
 @app.get("/detectar_camara")
 def detectar_camara():
     ip = network.scan_for_camera_ip()
-    if ip:
-        return {"ip": ip}
-    return {"ip": None, "error": "No se detectó ninguna cámara en la red"}
+    return {"ip": ip} if ip else {"ip": None, "error": "No se detectó ninguna cámara en la red"}
 
 @app.get("/video_feed")
 def video_feed(ip: str):
@@ -96,10 +93,11 @@ async def obtener_celda_actual():
         return {"hoja": hoja_coords, "celda": celda_coords, "medidas": medidas, "success": True}
     return {"hoja": None, "celda": celda_coords, "medidas": medidas, "success": False, "message": "No hay hoja detectada actualmente"}
 
-app.include_router(roles.router)
-app.include_router(usuarios.router, prefix="/usuarios")
-app.include_router(municiones.router)
-app.include_router(prueba.router)
+# --- Routers ---
+app.include_router(roles.router, prefix="/roles", tags=["Roles"])
+app.include_router(usuarios.router, prefix="/usuarios", tags=["Usuarios"])
+app.include_router(municiones.router, prefix="/municiones", tags=["Municiones"])
+app.include_router(prueba.router, prefix="/pruebas", tags=["Pruebas"])
 
 if __name__ == "__main__":
     import uvicorn
