@@ -21,15 +21,21 @@ except Exception as e:
 
 app = FastAPI(title="Backend Precision", version="1.0.0")
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://frontend-precision.vercel.app")
+# --- 🔥 CONFIGURACIÓN CORS FIJA ---
+origins = [
+    "https://frontend-precision.vercel.app",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL],  # Solo permite tu frontend
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# --- 🔥 FIN CONFIGURACIÓN CORS ---
 
 @app.post("/detecciones_area")
 @app.get("/detecciones_area")
