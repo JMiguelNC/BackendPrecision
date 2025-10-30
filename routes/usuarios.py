@@ -6,6 +6,10 @@ from psycopg2 import errors
 import base64
 import traceback
 import logging
+import bcrypt
+from passlib.hash import bcrypt as passlib_bcrypt
+
+passlib_bcrypt.set_backend("bcrypt")
 
 router = APIRouter()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -41,11 +45,8 @@ async def login(data: dict = Body(...)):
             return JSONResponse({"success": False, "message": "Usuario desactivado"}, status_code=400)
 
         stored_hash = user[1]
-
-        # Verificar contraseña
         valid = pwd_context.verify(contrasena, stored_hash)
 
-        # Rehash si es necesario
         if valid and pwd_context.needs_update(stored_hash):
             new_hash = pwd_context.hash(contrasena)
             cur.execute("UPDATE usuario SET contrasena=%s WHERE id=%s", (new_hash, user[0]))
